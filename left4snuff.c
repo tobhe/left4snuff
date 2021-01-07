@@ -41,9 +41,8 @@ int
 main()
 {
 	char	*args[3];
-	pid_t	 p, child;
 	int	 i;
-	pid_t	 pid = -1;
+	pid_t	 pid = -1, p, child;
 	size_t	 offset, size;
 
 	/* XXX: getopt? */
@@ -73,16 +72,22 @@ main()
 
 		printf("found PID: %d\n",pid);
 
+		/* Attach and patch */
 		if (ptrace(PTRACE_ATTACH, pid, NULL, NULL) == -1)
 			errx(1, "error: failed to attach to process\n");
 		while ((child = wait(NULL))) {
 			printf("The child %d was stopped\n", child);
 			if (child == pid) {
-				if (find_mapping(pid, &offset, &size) == -1)
+				if (find_mapping(pid, &offset, &size) == -1) {
+					ptrace(PTRACE_CONT, child, NULL, NULL);
 					errx(1, "error: failed to find engine.so\n");
+				}
 
-				/* XXX: Magic here */
-				find_replace_check(pid, offset, size);
+				if (find_replace_check(pid, offset, size) == -1) {
+					ptrace(PTRACE_CONT, child, NULL, NULL);
+					errx(1, "error: failed to patch engine.so\n");
+				}
+
 				ptrace(PTRACE_CONT, child, NULL, NULL);
 				break;
 			}
@@ -95,8 +100,7 @@ main()
 static int
 find_replace_check(pid_t pid, size_t offset, size_t size)
 {
-	char	 path[PATH_MAX];
-	char	*buf = NULL, *p;
+	char	 path[PATH_MAX], *buf = NULL, *p;
 	int	 fd, ret = -1;
 	size_t	 addr;
 
@@ -136,13 +140,12 @@ find_replace_check(pid_t pid, size_t offset, size_t size)
 static int
 find_mapping(pid_t pid, size_t *offset, size_t *size)
 {
-	char		 path[PATH_MAX];
-	char		*line = NULL, *found;
+	char		 path[PATH_MAX], *line = NULL, *found;
 	FILE		*f;
+	int		 ret = -1;
 	size_t		 len = 0;
 	ssize_t		 sz;
 	unsigned int	 start, end;
-	int		 ret = -1;
 
 	if (snprintf(path, sizeof(path) - 1, "/proc/%d/maps", pid) < 0)
 		return (-1);
@@ -172,10 +175,10 @@ find_proc(void)
 {
 	char		 path[PATH_MAX], buf[1024];
 	DIR		*dir;
-	struct dirent	*dirent;
+	int		 fd;
 	pid_t		 pid, ret = -1;
 	ssize_t		 bytes;
-	int		 fd;
+	struct dirent	*dirent;
 
 	dir = opendir("/proc");
 	if (dir == NULL)
