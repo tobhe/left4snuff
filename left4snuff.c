@@ -40,7 +40,7 @@ const uint64_t patch = 0x05c60d75db8404eb;
 int
 main()
 {
-	char	*args[3];
+	char	*args[3], *errstr = NULL;
 	int	 i;
 	pid_t	 pid = -1, p, child;
 	size_t	 offset, size;
@@ -77,22 +77,26 @@ main()
 			errx(1, "error: failed to attach to process\n");
 		while ((child = wait(NULL))) {
 			printf("The child %d was stopped\n", child);
-			if (child == pid) {
-				if (find_mapping(pid, &offset, &size) == -1) {
-					ptrace(PTRACE_CONT, child, NULL, NULL);
-					errx(1, "error: failed to find engine.so\n");
-				}
-
-				if (find_replace_check(pid, offset, size) == -1) {
-					ptrace(PTRACE_CONT, child, NULL, NULL);
-					errx(1, "error: failed to patch engine.so\n");
-				}
-
+			if (child != pid) {
 				ptrace(PTRACE_CONT, child, NULL, NULL);
+				continue;
+			}
+
+			if (find_mapping(pid, &offset, &size) == -1) {
+				errstr = "error: failed to find "
+				    "engine.so\n";
 				break;
 			}
-			ptrace(PTRACE_CONT, child, NULL, NULL);
+
+			if (find_replace_check(pid, offset, size) == -1)
+				errstr = "error: failed to patch "
+				    "engine.so\n";
+			break;
 		}
+		ptrace(PTRACE_CONT, child, NULL, NULL);
+
+		if (errstr)
+			errx(1, errstr);
 	}
 	return (0);
 }
@@ -144,7 +148,6 @@ find_mapping(pid_t pid, size_t *offset, size_t *size)
 	FILE		*f;
 	int		 ret = -1;
 	size_t		 len = 0;
-	ssize_t		 sz;
 	unsigned int	 start, end;
 
 	if (snprintf(path, sizeof(path) - 1, "/proc/%d/maps", pid) < 0)
@@ -152,7 +155,7 @@ find_mapping(pid_t pid, size_t *offset, size_t *size)
 	if ((f = fopen(path, "r")) == NULL)
 		return (-1);
 
-	while ((sz = getline(&line, &len, f)) != -1) {
+	while (getline(&line, &len, f) != -1) {
 		found = strstr(line, "engine.so");
 		if (found == NULL)
 			continue;

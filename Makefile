@@ -8,6 +8,7 @@ all: left4snuff
 
 left4snuff: left4snuff.c
 	${CC} ${CFLAGS} $? -o $@
+	strip $@
 
 .PHONY:clean
 clean:
