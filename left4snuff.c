@@ -34,8 +34,6 @@ static void print_usage(void);
 static void handle_child(pid_t, int);
 static pid_t find_proc(void);
 
-int procs = 1;
-
 static void
 print_usage(void)
 {
@@ -51,7 +49,8 @@ main(int argc, char *argv[])
 	char	*args[3];
 	pid_t	 p, child;
 	long	 r;
-	int	 status;
+	int	 i, status;
+	pid_t	 pid = -1;
 
 	bzero(args, sizeof(args));
 
@@ -61,67 +60,37 @@ main(int argc, char *argv[])
 		fprintf(stderr, "error: fork\n");
 		exit(1);
 	case 0:
-		printf("CHILD: %d\n", getpid());
-#if 1
+		/* Run game */
 		args[0] = "steam";
 		args[1] = "steam://rungameid/550";
 		args[2] = NULL;
-
-		ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-		raise(SIGSTOP);
 		execvp("steam", args);
-#else
-		args[0] = "ls";
-		args[1] = "-la";
-		args[2] = NULL;
-
-		ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-		raise(SIGSTOP);
-		execvp("ls", args);
-		break;
-#endif
 	default:
-		printf("PARENT: %d\n", getpid());
-		child = wait(NULL);
-		procs = 0;
-		ptrace(PTRACE_SETOPTIONS, child, NULL, PTRACE_O_TRACEEXEC);
-		printf("The child %d was stopped\n", child);
-		ptrace(PTRACE_CONT, p, NULL, NULL);
+		/* Wait up to 10s to find process */
+		for (i = 0; i < 10; i++) {
+			if ((pid = find_proc()) != -1)
+				break;
+			sleep(1);
+		}
+		if (pid == -1)
+			errx(1, "error: process not found\n");
 
-		find_proc();
+		printf("Found PID: %d\n",pid);
 
-		for(;;) {
-			child = waitpid(-1, &status, 0);
-			if (WIFEXITED(status) || WIFSIGNALED(status)) {
-				printf("child %d exited\n", child);
-				if (--procs == 0)
-					break;
+		/* */
+		if (ptrace(PTRACE_ATTACH, pid, NULL, NULL) == -1)
+			errx(1, "error: failed to attach to process\n");
+		while ((child = wait(NULL))) {
+			printf("The child %d was stopped\n", child);
+			if (child == pid) {
+				/* XXX: Magic here */
+				ptrace(PTRACE_CONT, child, NULL, NULL);
+				break;
 			}
-			handle_child(child, status >> 16);
+			ptrace(PTRACE_CONT, child, NULL, NULL);
 		}
 	}
 	return (0);
-}
-
-static void
-handle_child(pid_t pid, int status)
-{
-	long	newpid;
-	pid_t	p = pid;
-
-	if (status == PTRACE_EVENT_FORK ||
-	    status == PTRACE_EVENT_VFORK ||
-	    status == PTRACE_EVENT_CLONE) {
-		ptrace(PTRACE_GETEVENTMSG, p, NULL, &newpid);
-		p = newpid;
-		procs++;
-	}
-	printf("child %d\n", p);
-	ptrace(PTRACE_SETOPTIONS, p, NULL,
-	    PTRACE_O_TRACEFORK |
-	    PTRACE_O_TRACEVFORK |
-	    PTRACE_O_TRACECLONE);
-	ptrace(PTRACE_CONT, p, NULL, NULL);
 }
 
 static pid_t
@@ -139,20 +108,18 @@ find_proc(void)
 	if (dir == NULL)
 		return (-1);
 
-	bzero(buf, sizeof(buf));
-
 	while ((dirent = readdir(dir))) {
 		/* Read pid, check sanity */
 		pid = atoi(dirent->d_name);
 		if (pid < 1 || pid > INT_MAX)
 			continue;
 
+		/* XXX: use cmdline instead of comm */
 		if (snprintf(path, sizeof(path) - 1, "/proc/%d/comm", pid) < 0)
 			continue;
 
-		if ((fd = open(path, O_RDONLY)) == -1) {
+		if ((fd = open(path, O_RDONLY)) == -1)
 			continue;
-		}
 
 		if ((bytes = read(fd, buf, sizeof(buf) - 1)) == -1)
 			continue;
@@ -160,9 +127,11 @@ find_proc(void)
 		/* Remove trailing newline */
 		buf[bytes - 1] = '\0';
 
-		if (strncmp("hl2_linux", buf, sizeof(buf) -1) == 0)
+		if (strncmp("hl2_linux", buf, sizeof(buf) -1) == 0) {
+			printf("Found %s at %s\n", buf, path);
 			ret = pid;
+			break;
+		}
 	}
-
-	return (pid);
+	return (ret);
 }
