@@ -78,7 +78,7 @@ main()
 		while ((child = wait(NULL))) {
 			printf("The child %d was stopped\n", child);
 			if (child != pid) {
-				ptrace(PTRACE_CONT, child, NULL, NULL);
+				ptrace(PTRACE_DETACH, child, NULL, NULL);
 				continue;
 			}
 
@@ -93,7 +93,7 @@ main()
 				    "engine.so\n";
 			break;
 		}
-		ptrace(PTRACE_CONT, child, NULL, NULL);
+		ptrace(PTRACE_DETACH, child, NULL, NULL);
 
 		if (errstr)
 			errx(1, errstr);
