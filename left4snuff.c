@@ -30,6 +30,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef DEBUG
+#define DPRINTF(x...)	printf(x)
+#else
+#define DPRINTF(x...)	do { } while (0)
+#endif
+
 static int find_mapping(pid_t, size_t *, size_t *);
 static pid_t find_proc(void);
 static int find_replace_check(pid_t, size_t, size_t);
@@ -70,13 +76,13 @@ main()
 		if (pid == -1)
 			errx(1, "error: process not found\n");
 
-		printf("found PID: %d\n",pid);
+		DPRINTF("found PID: %d\n",pid);
 
 		/* Attach and patch */
 		if (ptrace(PTRACE_ATTACH, pid, NULL, NULL) == -1)
 			errx(1, "error: failed to attach to process\n");
 		while ((child = wait(NULL))) {
-			printf("The child %d was stopped\n", child);
+			DPRINTF("The child %d was stopped\n", child);
 			if (child != pid) {
 				ptrace(PTRACE_DETACH, child, NULL, NULL);
 				continue;
@@ -91,6 +97,7 @@ main()
 			if (find_replace_check(pid, offset, size) == -1)
 				errstr = "error: failed to patch "
 				    "engine.so\n";
+			printf("Patch successful! Have fun.\n");
 			break;
 		}
 		ptrace(PTRACE_DETACH, child, NULL, NULL);
@@ -161,7 +168,7 @@ find_mapping(pid_t pid, size_t *offset, size_t *size)
 			continue;
 		if (sscanf(line ,"%x-%x", &start, &end) == -1)
 			errx(1, "error: scanf\n");
-		printf("start: %x -> end: %x\n", start, end);
+		DPRINTF("start: %x -> end: %x\n", start, end);
 		*offset = start;
 		*size = end - start;
 		ret = 0;
@@ -209,7 +216,7 @@ find_proc(void)
 		buf[bytes - 1] = '\0';
 
 		if (strncmp("hl2_linux", buf, sizeof(buf) -1) == 0) {
-			printf("Found %s at %s\n", buf, path);
+			DPRINTF("Found %s at %s\n", buf, path);
 			close(fd);
 			ret = pid;
 			break;
