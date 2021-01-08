@@ -51,10 +51,6 @@ main()
 	pid_t	 pid = -1, p, child;
 	size_t	 offset, size;
 
-	/* XXX: getopt? */
-
-	bzero(args, sizeof(args));
-
 	p = fork();
 	switch (p) {
 	case -1:
@@ -200,7 +196,6 @@ find_proc(void)
 		if (pid < 1 || pid > INT_MAX)
 			continue;
 
-		/* XXX: use cmdline instead of comm */
 		if (snprintf(path, sizeof(path) - 1, "/proc/%d/comm", pid) < 0)
 			continue;
 
